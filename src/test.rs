@@ -899,6 +899,56 @@ fn test_mint_wrap_rejects_signature_from_wrong_key() {
 }
 
 #[test]
+fn test_mint_rejects_invalid_signature_with_wrong_admin_pubkey() {
+    let env = Env::default();
+    let contract_id = env.register(StellarWrapContract, ());
+    let client = StellarWrapContractClient::new(&env, &contract_id);
+
+    // Initialize with pubkey A
+    let signing_key_a = SigningKey::from_bytes(&[22u8; 32]);
+    let admin_pubkey_a =
+        BytesN::from_array(&env, &signing_key_a.verifying_key().to_bytes());
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    env.mock_all_auths();
+    client.initialize(&admin, &admin_pubkey_a);
+
+    let archetype = symbol_short!("arch");
+    let data_hash = BytesN::from_array(&env, &[42u8; 32]);
+    let period = 202401u64;
+
+    // Sign with key B (different from admin pubkey A)
+    let signing_key_b = SigningKey::from_bytes(&[77u8; 32]);
+    let signature = sign_payload(
+        &env,
+        &signing_key_b,
+        &contract_id,
+        &user,
+        period,
+        &archetype,
+        &data_hash,
+    );
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        client.mint_wrap(
+            &user,
+            &period,
+            &archetype,
+            &data_hash,
+            &CURRENT_PAYLOAD_VERSION,
+            &signature,
+        );
+    }));
+    assert!(result.is_err(), "mint must fail with wrong admin pubkey");
+    assert_maps_to_invalid_signature(&result);
+
+    // Verify balance and latest period are untouched
+    assert_eq!(client.balance_of(&user), 0);
+    assert!(client.get_latest_wrap(&user).is_none());
+}
+
+#[test]
 fn test_get_wrap_existing_user_nonexistent_period() {
     let env = Env::default();
     let contract_id = env.register(StellarWrapContract, ());

@@ -950,3 +950,49 @@ mod timelock_test;
 mod timelock_cancel_test;
 #[cfg(test)]
 mod revoke_test;
+
+#[cfg(test)]
+mod invalid_signature_test;
+
+#[cfg(test)]
+mod invalid_signature_test {
+    use super::*;
+    use crate::test_utils::generate_signature;
+    use soroban_sdk::testutils::Address as _;
+
+    #[test]
+    fn test_invalid_signature_with_wrong_admin_pubkey() {
+        let e = Env::default();
+        e.mock_all_auths();
+
+        let admin_a = Address::generate(&e);
+        let admin_b = Address::generate(&e);
+
+        let pubkey_a: BytesN<32> = BytesN::from_array(&e, &[0u8; 32]);
+        let pubkey_b: BytesN<32> = BytesN::from_array(&e, &[1u8; 32]);
+
+        StellarWrapContract::initialize(&e, admin_a.clone(), pubkey_a);
+
+        let user = Address::generate(&e);
+        let period = 202501u64;
+        let archetype = Symbol::new(&e, "TEST");
+        let data_hash: BytesN<32> = BytesN::from_array(&e, &[2u8; 32]);
+        let payload_version = 1u32;
+
+        let signature = generate_signature(&e, &admin_b, &pubkey_b, &user, period, archetype, &data_hash, payload_version);
+
+        assert!(StellarWrapContract::mint_wrap(
+            &e,
+            user.clone(),
+            period,
+            archetype,
+            data_hash,
+            payload_version,
+            signature,
+        )
+        .is_err());
+
+        assert_eq!(StellarWrapContract::balance_of(&e, user.clone()), 0i128);
+        assert_eq!(StellarWrapContract::get_latest_wrap(&e, user), None);
+    }
+}
